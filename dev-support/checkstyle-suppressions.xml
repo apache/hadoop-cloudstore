@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<!--
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License. See accompanying LICENSE file.
+-->
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.1//EN"
+    "https://checkstyle.org/dtds/suppressions_1_1.dtd">
+
+<suppressions>
+  <!-- Generated package-info.java is unlikely to need a Javadoc line. -->
+  <suppress checks="JavadocPackage" files="[\\/]src[\\/]test[\\/].*"/>
+  <suppress checks="JavadocPackage" files="[\\/]src[\\/][\w\-]*generated[\\/].*"/>
+
+  <!-- Test code: relax structural rules. Tests use lowercased static fields,
+       public fixture fields, and short test-helper utility classes. -->
+  <suppress checks="VisibilityModifier"          files="[\\/]src[\\/]test[\\/]"/>
+  <suppress checks="ConstantName"                files="[\\/]src[\\/]test[\\/]"/>
+  <suppress checks="HideUtilityClassConstructor" files="[\\/]src[\\/]test[\\/]"/>
+  <suppress checks="JavadocStyle"                files="[\\/]src[\\/]test[\\/]"/>
+
+  <!-- Per-FS DiagnosticsInfo subclasses follow a project convention: each
+       declares `classnames`, `optionalClassnames`, `options`, `optionalCapabilities`
+       arrays in the same shape across stores so they read like a table. The
+       convention predates Hadoop's Sun-checks-derived ConstantName rule. -->
+  <suppress checks="ConstantName"
+            files="[\\/]src[\\/]main[\\/]java[\\/]org[\\/]apache[\\/]hadoop[\\/]fs[\\/]store[\\/]diag[\\/].*DiagnosticsInfo\.java"/>
+
+  <!-- Default-package CLI shims (e.g. dux.java, storediag.java). Each is a
+       lowercase-named one-liner that delegates to its target Tool class so
+       `hadoop jar cloudstore.jar dux ...` resolves at the bare class name.
+       The lowercase identifier is the public CLI surface and must stay
+       byte-stable. The default package also prevents a package-info.java. -->
+  <suppress checks="TypeName"        files="[\\/]src[\\/]main[\\/]java[\\/][a-z][^\\/]*\.java"/>
+  <suppress checks="JavadocPackage"  files="[\\/]src[\\/]main[\\/]java[\\/][a-z][^\\/]*\.java"/>
+</suppressions>

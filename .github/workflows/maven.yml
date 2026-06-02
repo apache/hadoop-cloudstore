@@ -1,0 +1,95 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Java CI with Maven, split so that:
+#
+#   * lint  -- license headers + Spotless formatting. Cheap, deterministic;
+#              MUST be green to merge (configured in branch protection).
+#              Runs in upstream on every push and every PR (incl. fork PRs).
+#
+#   * build -- compile + unit tests + site. Heavier; tolerated red, but the
+#              author is expected to look. Runs in upstream on pushes and on
+#              PRs raised from the *same* repository. PRs from forks fall
+#              back to the forker's own Actions runner (their fork builds on
+#              push to the PR branch), which keeps upstream cycles for the
+#              cheap checks and limits exposure to PR code in the base repo.
+#
+# Third-party actions are SHA-pinned per SECURITY.md. When bumping, update
+# both the SHA and the trailing tag comment in lockstep.
+
+name: Java CI with Maven
+
+on:
+  push:
+  pull_request:
+    branches: [ main, master, trunk ]
+
+permissions:
+  contents: read
+
+concurrency:
+  # Group PRs by PR number (cancellable on synchronize); pushes/cron by
+  # ref (queued, never canceled).
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  # Cancel superseded PR runs. Don't cancel pushes to long-lived branches --
+  # every commit to main/master should be verified end-to-end.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint (RAT + Spotless)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+    - name: Set up JDK
+      uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+    - name: Apache RAT (license headers)
+      run: mvn -B org.apache.rat:apache-rat-plugin:check
+    - name: Spotless (palantir-java-format)
+      run: mvn -B spotless:check
+
+  build:
+    name: Build (compile + tests + site)
+    needs: lint
+    # Skip on PRs raised from forks -- the forker's own Actions runs the
+    # full build on push to their PR branch. Upstream still gets lint above.
+    # zizmor: ignore[template-injection] -- expression context only; both
+    # operands are GitHub-issued repo slugs ([a-z0-9._-]+/[a-z0-9._-]+),
+    # not user-controlled free text, so no injection surface exists.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      with:
+        persist-credentials: false
+    - name: Set up JDK
+      uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5.2.0
+      with:
+        # apache-rat-plugin 0.18 (wired into verify) requires JDK 17.
+        # Bytecode target remains 1.8 via the compiler plugin.
+        java-version: '17'
+        distribution: 'temurin'
+    - name: Verify (compile + unit tests + RAT + Spotless)
+      run: mvn -B verify
+    - name: Build site
+      run: mvn -B site -DskipTests
