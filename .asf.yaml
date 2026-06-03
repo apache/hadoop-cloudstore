@@ -26,14 +26,14 @@ github:
     rebase: true
     # default commit message when merging with a squash commit
     # can either be: DEFAULT | PR_TITLE | PR_TITLE_AND_COMMIT_DETAILS | PR_TITLE_AND_DESC
-    squash_commit_message: PR_TITLE_AND_COMMIT_DETAILS
+    squash_commit_message: PR_TITLE
   autolink_jira:
     - HADOOP
   # Projects can enable and disable Dependabot alerts and automatic security update pull requests:
   # this is on experimentally, we don't want to update hadoop because we want
   # to pin versions down
-  dependabot_alerts:  true
-  dependabot_updates: true
+  dependabot_alerts:  false
+  dependabot_updates: false
   copilot_code_review:
       enabled: true
       review_drafts: false
@@ -60,7 +60,7 @@ github:
       required_linear_history: true
 
       # gh merge signs; manual commits need committers to set up git commit signing.
-      required_signatures: true
+      required_signatures: false
 
       # requires all conversations to be resolved before merging is possible
       required_conversation_resolution: false
@@ -73,7 +73,7 @@ notifications:
 
 features:
   wiki: false
-  issues: false
+  issues: true
   projects: false
 
 

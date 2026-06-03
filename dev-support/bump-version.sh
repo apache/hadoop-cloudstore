@@ -20,9 +20,11 @@
 # form, e.g. "1.4-SNAPSHOT" or "1.4". Does NOT rewrite site documentation —
 # release-time doc updates are handled by dev-support/update-site-docs.sh.
 #
-# Also updates BUILDING.md's fish `set -gx ver <v>` line so the release
-# command block always points at the bare release artifact name (a trailing
-# -SNAPSHOT is stripped before substituting).
+# On a *release* bump, also updates BUILDING.md's fish `set -gx ver <v>` line
+# so the release command block points at the artifact being cut. SNAPSHOT dev
+# bumps leave that line alone: it must stay at the last released version to
+# match ${cloudstore.docs.version}, which the verify gate
+# (dev-support/check-doc-versions.sh) enforces.
 #
 # Usage:   dev-support/bump-version.sh <new-version>
 # Example: dev-support/bump-version.sh 1.4-SNAPSHOT
@@ -66,17 +68,19 @@ echo "bumping $OLD -> $NEW"
 mvn -q versions:set -DnewVersion="$NEW" -DgenerateBackupPoms=false
 
 # BUILDING.md's release block declares `set -gx ver <v>` in fish (`version`
-# is a reserved variable name in fish). That line is consumed by the
-# release command sequence, which names artifacts via `cloudstore-$ver.jar`,
-# so it must always reflect the bare release version — strip any trailing
-# -SNAPSHOT.
-RELEASE_VER="${NEW%-SNAPSHOT}"
-if [[ -f BUILDING.md ]] && grep -qE "^set -gx ver [0-9]+\.[0-9]+( |$|	)" BUILDING.md; then
+# is a reserved variable name in fish). That line names the artifacts the
+# release sequence uploads (`cloudstore-$ver.jar`) and is gated by
+# check-doc-versions.sh to equal ${cloudstore.docs.version} — the last
+# *released* version. So only move it on a release bump; a SNAPSHOT dev bump
+# must leave it pointing at the last release, or the verify gate fails.
+if [[ "$NEW" != *-SNAPSHOT ]] \
+    && [[ -f BUILDING.md ]] \
+    && grep -qE "^set -gx ver [0-9]+\.[0-9]+( |$|	)" BUILDING.md; then
   # Note: no \b word-boundary here — BSD/macOS sed does not support it and
   # would silently match nothing. Anchor on the literal prefix instead.
-  sed -i.bak -E "s|^(set -gx ver )[0-9]+\.[0-9]+|\1${RELEASE_VER}|" BUILDING.md
+  sed -i.bak -E "s|^(set -gx ver )[0-9]+\.[0-9]+|\1${NEW}|" BUILDING.md
   rm -f BUILDING.md.bak
-  echo "  rewrote BUILDING.md (set -gx ver ${RELEASE_VER})"
+  echo "  rewrote BUILDING.md (set -gx ver ${NEW})"
 fi
 
 echo "done. Review with: git diff"
