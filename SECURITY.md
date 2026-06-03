@@ -134,7 +134,7 @@ The project is built on developer systems, and in CI systems.
 * Components such as maven plugins execute code on developer systems. Their security MUST be evaluated before adoption.
 * Third-party libraries which production code compiles against may be executed during testing. Their security MUST be evaluated.
 * Some developers may use VS.Code. This IDE has a notion of [a trusted workspace](https://code.visualstudio.com/docs/editing/workspaces/workspace-trust), which allows for files in the directory tree to declare executables, files such as `.env' and `tasks.json`. These files must be considered sensitive.
-* 
+
 The CI build output is publicly visible, so the threat model includes unobfuscated logging of any cloud credentials provided by CI runs, or leakage of other secrets.
 
 The threat model includes the risk of subverted github actions and build tooling.
@@ -146,9 +146,6 @@ The threat model includes the risk of subverted github actions and build tooling
 * Github Action triggers on PRs MUST NOT be triggers which provide unrestricted github tokens to the actions.
    For example, there MUST NOT be `pull_request_target`, `workflow_run`, or `issue_comment` triggers. 
 * Github Actions SHALL follow GitHub's [secure use](https://docs.github.com/en/actions/reference/security/secure-use) guidelines, and in particular use [Intermediate Environment Variables](https://docs.github.com/en/actions/reference/security/secure-use#use-an-intermediate-environment-variable) to safely process untrusted inputs.
-
-
-
 
 ## Not in the Threat Model
 
