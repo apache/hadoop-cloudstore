@@ -154,7 +154,7 @@ The build will fail if there are uncommitted changes.
 
 ### Release Commands (for fish)
 ```bash
-set -gx ver 1.5                           # last released version; moved only on a release bump by dev-support/bump-version.sh
+set -gx ver 1.6                           # last released version; moved only on a release bump by dev-support/bump-version.sh
 
 # now the release build
 mvn clean install -Prelease,sign -DskipTests
