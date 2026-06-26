@@ -137,11 +137,26 @@ cloudstore-<version>.jar.sha256`) independent of the gpg signature.
 It also generates a build version, with the buildnumber plugin.
 On release builds, this will fail the build if there are uncommitted changes.
 
-Commit all changes before starting a release build.
+** You must commit all changes before starting a release build.**
 
-Commands (for fish)
+The build will fail if there are uncommitted changes.
+
+```
+[INFO] --- buildnumber:3.3.0:create (default) @ cloudstore ---
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  4.344 s
+[INFO] Finished at: 2026-06-26T17:23:21+01:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.codehaus.mojo:buildnumber-maven-plugin:3.3.0:create (default) on project cloudstore: Cannot create the build number because you have local modifications : 
+```
+
+### Release Commands (for fish)
 ```bash
-set -gx ver 1.4                           # last released version; moved only on a release bump by dev-support/bump-version.sh
+set -gx ver 1.5                           # last released version; moved only on a release bump by dev-support/bump-version.sh
+
+# now the release build
 mvn clean install -Prelease,sign -DskipTests
 set -gx now (date '+%Y-%m-%d-%H.%M'); echo [$now]
 git commit -S --allow-empty -m "release $now"; git push
