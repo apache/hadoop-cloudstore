@@ -106,26 +106,26 @@ the Hadoop configuration used in the command.
 Examine store and print diagnostics, including testing read and optionally write
 operations
 
-See [storediag](src/main/site/storediag.md) for details.
+See [storediag](src/site/markdown/storediag.md) for details.
 
 ## auditlogs
 
 Parse AWS S3 Server logs into avro files, extracting http referrer-encoded
 audit information where found.
 
-See [auditlogs](src/main/site/auditlogs.md) for details.
+See [auditlogs](src/site/markdown/auditlogs.md) for details.
 
 ## bandwidth
 
 Measure upload/download bandwidth, optionally saving data to a CSV file.
 
-See [bandwidth](src/main/site/bandwidth.md) for details.
+See [bandwidth](src/site/markdown/bandwidth.md) for details.
 
 ## bucketmetadata
 
 Retrieves metadata from an S3 Bucket (v2 SDK only) by probing the store.
 
-See [bucketmetadata](src/main/site/bucketmetadata.md) for details.
+See [bucketmetadata](src/site/markdown/bucketmetadata.md) for details.
 
 ## bulkdelete
 
@@ -133,24 +133,24 @@ Performs a bulk delete of files from a store, with higher performance
 against some stores (S3).
 Requires hadoop libraries with the 2024 bulk delete API (hadoop 3.4.1+).
 
-See [bulkdelete](src/main/site/bulkdelete.md) for details.
+See [bulkdelete](src/site/markdown/bulkdelete.md) for details.
 
 ## cloudup -upload and download files; optimised for cloud storage 
 
-See [cloudup](src/main/site/cloudup.md)
+See [cloudup](src/site/markdown/cloudup.md)
 
 ## committerinfo
 
 Tries to instantiate a committer using the Hadoop 3.1+ committer factory mechanism, printing out
 what committer a specific path will create.
 
-See [committerinfo](src/main/site/committerinfo.md).
+See [committerinfo](src/site/markdown/committerinfo.md).
 
 ## constval
 
 Loads a class, resolves a constant/static final field and prints its value. 
 
-See [constval](src/main/site/constval.md)
+See [constval](src/site/markdown/constval.md)
 
 
 ## dux  "Du, extended"
@@ -196,14 +196,14 @@ a list page prefetch is in progress.
 Prints the etag of an object, when implemented by the filesystem
 and returned by the object store.
 
-See [etag](src/main/site/etag.md)
+See [etag](src/site/markdown/etag.md)
 
 ## fetchdt
 
 This is an extension of `hdfs fetchdt` which collects delegation tokens
 from a list of filesystems, saving them to a file.
 
-See [fetchdt](src/main/site/fetchdt.md)
+See [fetchdt](src/site/markdown/fetchdt.md)
 
 ## filestatus
 
@@ -299,14 +299,14 @@ Use the mapreduce `LocatedFileStatusFetcher` to scan for all non-hidden
 files under a path.
 
 
-See [locatefiles](src/main/site/locatefiles.md)
+See [locatefiles](src/site/markdown/locatefiles.md)
 
 ## mkcsv
 
 Creates a large CSV file designed to trigger/validate the ABFS prefetching bug which
 came in HADOOP-17156.
 
-See [mkcsv](src/main/site/mkcsv.md)
+See [mkcsv](src/site/markdown/mkcsv.md)
 
 ## pathcapability
 
@@ -334,17 +334,17 @@ The exit code of the command is 0 if the capability is present and -1 if absent.
 
 Uploads/copies a file, with the ability to set `createFile()` parameters.
 
-See [put](src/main/site/put.md)
+See [put](src/site/markdown/put.md)
 
 ## tlsinfo
 
 Print out TLS information including X509 certificates.
 
-See [tlsinfo](src/main/site/tlsinfo.md)
+See [tlsinfo](src/site/markdown/tlsinfo.md)
 
 ## AWS SDK commands
 
-See [S3 operations through the AWS V2 SDK](src/main/site/sdk.md).
+See [S3 operations through the AWS V2 SDK](src/site/markdown/sdk.md).
 
 ## Development and Future Work
 
