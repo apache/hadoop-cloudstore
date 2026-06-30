@@ -189,3 +189,5 @@ primarily on:
 - A malicious catalog, metastore, or external service.
 - A principal that already has equivalent power through legitimate write or maintenance capabilities.
 - A vulnerability that only exists in previous releases.
+
+Any deserialization vulnerability in TokenIdentifier.readFields would be considered critical 
