@@ -255,15 +255,6 @@
       </properties>
     </profile>
 
-    <!-- cloudera 7.3.2 -->
-    <profile>
-      <id>7.3.2</id>
-      <properties>
-        <hadoop.version>3.4.1.7.3.2.0</hadoop.version>
-      </properties>
-    </profile>
-
-
     <profile>
       <id>trunk</id>
       <activation>
