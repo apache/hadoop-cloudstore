@@ -113,27 +113,40 @@ dev-support/bump-version.sh 1.5-SNAPSHOT
 
 ## Releasing
 
-Cutting a release is two phases: an **automated** build+stage phase that runs
-in CI, and a **manual** sign/vote/publish phase performed by the release
-manager (RM). No private key lives in CI — GPG signing with the RM's
-personal ASF key remains a human step, as ASF release policy requires.
-What CI automates is everything before that: building, proving the build is
-reproducible, attesting its provenance, and staging the result as a draft
-GitHub Release.
+Cutting a release targets [Apache Trusted Releases](https://github.com/apache/tooling-trusted-releases)
+(ATR), the ASF's platform for composing, voting on, and publishing official
+releases. It is two phases: an **automated** build+compose phase that runs
+in CI and uploads a release candidate to ATR, and a **manual** vote+publish
+phase performed by the PMC through ATR itself. No private key lives outside
+ATR's own infrastructure: the compose phase signs with a dedicated
+"Automated Release Signing" key that ASF Infra provisions specifically for
+unattended CI use (see the setup checklist in `.github/workflows/release.yml`'s
+header comment), and voting/publishing happen as ASF release policy
+requires — a PMC vote is not something CI can substitute for.
 
 Release builds activate the `release` profile, which:
 
 1. Enforces a clean git tree via `buildnumber-maven-plugin`;
-2. Emits a CycloneDX SBOM next to the jar:
+2. Packages the whole source tree as the release's source artifact —
+   `target/cloudstore-<version>-src.tar.gz`, per
+   `dev-support/assembly/source-release.xml` — since every ASF release
+   needs at least one, and ATR checks for it;
+3. Emits a CycloneDX SBOM next to the jar:
     - `target/cloudstore-<version>-cyclonedx.json`
     - `target/cloudstore-<version>-cyclonedx.xml`
-3. Emits a SHA-256 digest next to the jar and each SBOM file:
+4. Emits a SHA-256 digest next to the jar, the source tarball, and each
+   SBOM file:
     - `target/cloudstore-<version>.jar.sha256`
+    - `target/cloudstore-<version>-src.tar.gz.sha256`
     - `target/cloudstore-<version>-cyclonedx.json.sha256`
     - `target/cloudstore-<version>-cyclonedx.xml.sha256`
 
 The SBOM is compile-scope only — `provided` dependencies are not in it because they are not shipped
-in the jar.
+in the jar. The source tarball ships plain `LICENSE`/`NOTICE` (not the
+`-binary` variants, which list third-party binary dependencies that aren't
+present in a source tree) and a `.rat-excludes` file at its root, so a RAT
+scan of the extracted tarball — whether run by ATR or by hand — uses the
+same exclusions as this project's own build.
 
 The `.sha256` files are produced by `checksum-maven-plugin` in the `verify`
 phase. They give downloaders a quick integrity check (`shasum -c
@@ -158,7 +171,19 @@ The build will fail if there are uncommitted changes.
         Cannot create the build number because you have local modifications : 
 ```
 
-### Phase 1: automated build + staging (CI)
+### One-time setup
+
+Before this workflow can be used at all, cloudstore's committee needs to be
+onboarded to ATR Trusted Publishing: ASF Security must confirm the build is
+reproducible, ASF Infra must cut the committee's "Automated Release Signing"
+key and store its private half as the `ATR_SIGNING_KEY` repository secret,
+and `.github/workflows/release.yml` must be registered under the *compose*
+phase of cloudstore's ATR release policy. The full checklist, including the
+repository variables to set (`ATR_HOST`, `ATR_PROJECT_KEY`, and friends),
+lives in that workflow file's header comment rather than being duplicated
+here — check there for the current state of that setup.
+
+### Phase 1: automated build + compose (CI)
 
 After `dev-support/bump-version.sh <version>` and
 `dev-support/update-site-docs.sh <version>` have been run and committed
@@ -173,78 +198,86 @@ gh run watch (gh run list --workflow=release.yml -L1 --json databaseId -q '.[0].
 The workflow, from a clean checkout of the ref you dispatched from:
 
 1. builds with the `release` profile *twice*, independently, and fails the
-   job unless the jar and both SBOMs are byte-identical between the two
-   builds — this is what backs "anyone else building this gets the same
-   binary", rather than just asserting it;
-2. attests build provenance for the jar and SBOMs via
-   `actions/attest-build-provenance` (keyless, Sigstore/OIDC-backed — no
-   secret key stored in CI);
-3. stages everything as a **draft** GitHub Release tagged `v<version>`
-   (superseding the old `tag-release-<timestamp>` scheme — one tag per
-   release version now, since multiple runs for the same version just
-   update the same draft).
+   job unless the jar, the source tarball, and both SBOMs are all
+   byte-identical between the two builds — this is what backs "anyone else
+   building this gets the same binary", rather than just asserting it;
+2. attests build provenance for all four artifacts via
+   `actions/attest-build-provenance` (keyless, Sigstore/OIDC-backed —
+   independent of, and in addition to, ATR's own signature);
+3. signs all four artifacts with the committee's automated release
+   signing key;
+4. authenticates to ATR as a GitHub Actions Trusted Publisher (a GitHub
+   OIDC token, exchanged for a 20-minute single-project SSH key) and
+   uploads the signed artifacts, over rsync, into a new release candidate
+   on ATR.
 
-The job summary lists the Phase 2 steps below as a checklist.
+ATR then runs its own checks (signature, hash, archive structure, license,
+RAT, SBOM conformance) against the uploaded candidate automatically; the job
+summary points at where to review them.
 
-### Phase 2: manual sign, vote, publish (RM)
+ATR itself doesn't need a git tag — it tracks the candidate by project and
+version — but tag the commit anyway so "Reproducing a release yourself"
+below stays meaningful: `git tag v$ver <ref>; git push origin v$ver`.
 
-```bash
-test -n "$ver"; or begin; echo "ERROR: \$ver is unset/empty -- run: set -gx ver <version>"; exit 1; end
+### Phase 2: vote and publish (PMC, in ATR)
 
-# Rebuild locally and sign -- reproducibility means this jar is byte-identical
-# to the one CI already staged, so signing it is equivalent to signing CI's.
-mvn clean install -Prelease,sign -DskipTests
+From here the process is entirely in ATR, not this repository:
 
-# Independent confirmation before trusting it: compare against the draft's
-# published digest.
-gh release download v$ver -D /tmp/release-$ver --pattern '*.sha256'
-[ "$(shasum -a 256 target/cloudstore-$ver.jar | awk '{print $1}')" = \
-  "$(cat /tmp/release-$ver/cloudstore-$ver.jar.sha256)" ] && echo "reproducible: matches CI's build"
-
-# Upload just the signatures -- the jar/SBOMs/checksums are already staged.
-gh release upload v$ver \
-    target/cloudstore-$ver.jar.asc \
-    target/cloudstore-$ver-cyclonedx.json.asc \
-    target/cloudstore-$ver-cyclonedx.xml.asc
-
-echo "go to the web ui to review, start the dev@ vote referencing the draft"
-echo "and its provenance attestation (gh attestation verify), and on a"
-echo "passing vote: gh release edit v$ver --draft=false"
-```
+1. Review the candidate and its check results on the ATR project page.
+2. Start the vote from ATR — it emails dev@ with a link to the candidate on
+   ATR (link only that page; see
+   [Staging and voting](https://github.com/apache/tooling-trusted-releases/blob/main/atr/docs/staging-and-voting.md#what-to-link-in-a-vote-announcement)
+   for why).
+3. PMC members vote, independently rebuilding and comparing hashes as
+   described below — this, not the automated signature, is what confirms
+   the CI-built artifacts are genuine.
+4. On a passing vote, finish the release from ATR. From Beta, ATR publishes
+   directly to `dist/release`; during Alpha it publishes to `dist/atr` and a
+   committer must move the files, as described in
+   [Promoting to release](https://github.com/apache/tooling-trusted-releases/blob/main/atr/docs/promoting-to-release.md).
 
 ### Reproducing a release yourself
 
-Anyone — CI, the RM, or a third party — gets the same binary from the same
-commit, provided they use the same JDK (Temurin 17, matching
-`release.yml`'s `Set up JDK` step; bytecode target is 1.8 either way):
+Anyone — a PMC member voting, or a third party after the fact — gets the
+same binary from the same commit, provided they use the same JDK (Temurin
+17, matching `release.yml`'s `Set up JDK` step; bytecode target is 1.8
+either way):
 
 ```bash
 git checkout v$ver
 mvn -Prelease clean package -DskipTests
-[ "$(shasum -a 256 target/cloudstore-$ver.jar | awk '{print $1}')" = \
-  "$(curl -sL https://github.com/apache/hadoop-cloudstore/releases/download/v$ver/cloudstore-$ver.jar.sha256)" ] \
-  && echo "reproducible"
+shasum -a 256 target/cloudstore-$ver.jar
+# compare against the .sha256 published alongside the candidate/release on ATR
 ```
 
 This works because `project.build.outputTimestamp` in `pom.xml` pins the
 jar's internal timestamps to a fixed point (HEAD's commit time at release-cut,
 set by `dev-support/bump-version.sh`) instead of "whenever the build ran" —
 see the [Maven reproducible builds guide](https://maven.apache.org/guides/mini/guide-reproducible-builds.html).
+Demonstrating exactly this was also the prerequisite for cloudstore's ATR
+Trusted Publishing eligibility in the first place.
 
-## Signing release artifacts
+## Signing release artifacts manually
 
-Activate the `sign` profile alongside `release` (as in the command
-above) to GPG-sign every attached artifact. The plugin produces a
-detached `.asc` next to each of:
+This is the fallback path: local smoke-testing of a release build, or
+composing a candidate on ATR by hand (browser upload or personal-key rsync)
+if Trusted Publishing isn't set up yet. `release.yml`'s automated compose
+(above) does the equivalent signing itself, with the committee's automated
+key, and does not need this.
+
+Activate the `sign` profile alongside `release` to GPG-sign every attached
+artifact with your own key. The plugin produces a detached `.asc` next to
+each of:
 
 - `target/cloudstore-<version>.jar`
 - `target/cloudstore-<version>.pom`
+- `target/cloudstore-<version>-src.tar.gz`
 - `target/cloudstore-<version>-cyclonedx.json`
 - `target/cloudstore-<version>-cyclonedx.xml`
 
 Prerequisites:
 
-1. An OpenPGP key in the Hadoop committer KEYS file.
+1. An OpenPGP key in the Hadoop committer `KEYS` file.
 2. `gpg-agent` running with the release key unlocked. A quick way to
    warm the agent before the build is:
    `echo test | gpg --clearsign -u <keyid> > /dev/null`.
@@ -271,9 +304,14 @@ compare directly:
 gpg --verify cloudstore-$ver.jar.asc cloudstore-$ver.jar
 ```
 
-Phase 1 above already stages the jar, SBOMs, and `.sha256` digests on the
-draft release; Phase 2's `gh release upload v$ver *.asc` is what attaches
-the signatures produced here.
+To upload artifacts signed this way to ATR by hand, see the "How files reach
+ATR" section of
+[Staging and voting](https://github.com/apache/tooling-trusted-releases/blob/main/atr/docs/staging-and-voting.md#how-files-reach-atr).
+
+*Important* Although the build tries to keep cloud credentials in `src/test/resources/auth-keys.xml` out of the source tarball,
+along with all other build- and IDE-related artifacts, it is best to do a local release from a clean source directory not used
+for test runs.
+ATR is the preferred mechansim. 
 
 ## How to bypass buildnumber checks
 

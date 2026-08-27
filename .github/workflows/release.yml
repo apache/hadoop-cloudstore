@@ -15,14 +15,45 @@
 # limitations under the License.
 
 # Automates the mechanical half of cutting a cloudstore release: build,
-# prove the build is reproducible, attest its provenance, and stage the
-# result as a draft GitHub Release. It does NOT sign or publish anything.
+# prove the build is reproducible, sign, and compose a release candidate on
+# Apache Trusted Releases (ATR, https://github.com/apache/tooling-trusted-releases).
+# The PMC vote and the final "finish" (publish) step remain manual, performed
+# through ATR itself -- this workflow only performs the *compose* phase of an
+# ATR release: https://github.com/apache/tooling-trusted-releases/blob/main/atr/docs/staging-and-voting.md
 #
-# Reproducibility is enforced, not assumed: the release profile is run
-# twice from a clean checkout and the resulting jar + SBOMs must be
-# byte-identical, or the job fails. That's what backs the claim that a
-# third party rebuilding the same commit with the same JDK gets the same
-# binary -- see pom.xml's project.build.outputTimestamp for the mechanism.
+# Reproducibility is enforced, not assumed: the release profile is run twice
+# from a clean checkout and the resulting jar + SBOMs must be byte-identical,
+# or the job fails. Demonstrating this is also ATR's own prerequisite for
+# Trusted Publishing eligibility -- see
+# https://github.com/apache/tooling-trusted-releases/blob/main/atr/docs/trusted-publishing.md
+#
+# ## One-time setup this workflow depends on
+#
+# 1. ASF Security has confirmed cloudstore's build is reproducible, and ASF
+#    Infra has generated an "Automated Release Signing" GPG keypair for the
+#    committee (primary UID containing "Automated Release Signing", email
+#    private@<committee>.apache.org). Its public half is imported into the
+#    committee KEYS file via ATR.
+# 2. The private half of that key is stored as the `ATR_SIGNING_KEY` secret
+#    on this repository (ASCII-armored, ideally without a passphrase since
+#    this job runs unattended -- confirm with ASF Infra how it was cut).
+# 3. In the cloudstore project's ATR release policy (Trusted Publishing tab):
+#    repository name `hadoop-cloudstore`, and this file's path
+#    (`.github/workflows/release.yml`) registered under the *compose* phase.
+# 4. Repository variables (Settings > Secrets and variables > Actions > Variables):
+#      ATR_HOST              - ATR's hostname, no scheme (e.g. release.apache.org)
+#      ATR_PROJECT_KEY       - cloudstore's project key in ATR
+#      ATR_SIGNING_KEY_ID    - (optional) key id/fingerprint for `gpg --local-user`,
+#                              only needed if more than one key ends up importable
+#      ATR_SSH_KNOWN_HOSTS   - (recommended) `known_hosts` line(s) pinning ATR's
+#                              SSH host key; without this the job falls back to
+#                              trust-on-first-use, which does not protect against
+#                              a MITM'd first connection
+#
+# Whoever triggers this workflow (dispatches it) must have their GitHub
+# account linked to their ASF account (gitbox.apache.org/boxer), or ATR
+# rejects the SSH key registration -- see "How ATR matches a workflow" in
+# trusted-publishing.md.
 #
 # Third-party actions are SHA-pinned per SECURITY.md. When bumping, update
 # both the SHA and the trailing tag comment in lockstep.
@@ -46,27 +77,39 @@ permissions:
 
 concurrency:
   # One in-flight build per version -- queue rather than race concurrent
-  # dispatches for the same release onto the same draft/tag.
+  # dispatches for the same release onto the same ATR release candidate.
   group: ${{ github.workflow }}-${{ inputs.version }}
   cancel-in-progress: false
 
 jobs:
   build:
-    name: Build, verify reproducibility, attest, stage
+    name: Build, verify reproducibility, sign, compose on ATR
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
-      contents: write       # create/update the draft release
-      attestations: write   # actions/attest-build-provenance
-      id-token: write       # OIDC token for keyless (Sigstore) attestation
+      attestations: write   # actions/attest-build-provenance (independent of ATR)
+      id-token: write       # OIDC token for GitHub->ATR Trusted Publishing and for attest-build-provenance
     env:
       RELEASE_VERSION: ${{ inputs.version }}
-      RELEASE_TAG: v${{ inputs.version }}
+      ATR_HOST: ${{ vars.ATR_HOST }}
+      ATR_PROJECT_KEY: ${{ vars.ATR_PROJECT_KEY }}
+      ATR_SIGNING_KEY_ID: ${{ vars.ATR_SIGNING_KEY_ID }}
+      ATR_SSH_KNOWN_HOSTS: ${{ vars.ATR_SSH_KNOWN_HOSTS }}
     steps:
     - name: Validate version input
       run: |
         if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
           echo "::error::version must be X.Y (got '$RELEASE_VERSION')"
+          exit 1
+        fi
+
+    - name: Check ATR configuration is present
+      run: |
+        missing=()
+        [[ -z "$ATR_HOST" ]] && missing+=("vars.ATR_HOST")
+        [[ -z "$ATR_PROJECT_KEY" ]] && missing+=("vars.ATR_PROJECT_KEY")
+        if [[ ${#missing[@]} -gt 0 ]]; then
+          echo "::error::not configured for ATR yet, missing: ${missing[*]} -- see the comment block at the top of this workflow"
           exit 1
         fi
 
@@ -98,6 +141,7 @@ jobs:
       run: |
         mkdir -p /tmp/build1
         cp "target/cloudstore-${RELEASE_VERSION}.jar" \
+           "target/cloudstore-${RELEASE_VERSION}-src.tar.gz" \
            "target/cloudstore-${RELEASE_VERSION}-cyclonedx.json" \
            "target/cloudstore-${RELEASE_VERSION}-cyclonedx.xml" \
            /tmp/build1/
@@ -109,6 +153,7 @@ jobs:
       run: |
         status=0
         for f in "cloudstore-${RELEASE_VERSION}.jar" \
+                 "cloudstore-${RELEASE_VERSION}-src.tar.gz" \
                  "cloudstore-${RELEASE_VERSION}-cyclonedx.json" \
                  "cloudstore-${RELEASE_VERSION}-cyclonedx.xml"; do
           if cmp -s "/tmp/build1/$f" "target/$f"; then
@@ -129,37 +174,86 @@ jobs:
       with:
         subject-path: |
           target/cloudstore-${{ inputs.version }}.jar
+          target/cloudstore-${{ inputs.version }}-src.tar.gz
           target/cloudstore-${{ inputs.version }}-cyclonedx.json
           target/cloudstore-${{ inputs.version }}-cyclonedx.xml
 
-    - name: Stage draft GitHub Release
+    - name: Sign artifacts with the automated release signing key
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ATR_SIGNING_KEY: ${{ secrets.ATR_SIGNING_KEY }}
       run: |
-        assets=(
-          "target/cloudstore-${RELEASE_VERSION}.jar"
-          "target/cloudstore-${RELEASE_VERSION}.jar.sha256"
-          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.json"
-          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.json.sha256"
-          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.xml"
-          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.xml.sha256"
-          "LICENSE-binary"
-          "NOTICE-binary"
-        )
-        if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-          echo "release $RELEASE_TAG already exists -- uploading (replacing same-named assets)"
-          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
-        else
-          gh release create "$RELEASE_TAG" \
-            --target "$(git rev-parse HEAD)" \
-            --title "cloudstore $RELEASE_VERSION" \
-            --draft \
-            --generate-notes \
-            "${assets[@]}"
+        if [[ -z "$ATR_SIGNING_KEY" ]]; then
+          echo "::error::secrets.ATR_SIGNING_KEY is not set -- see the comment block at the top of this workflow"
+          exit 1
         fi
-        echo "### Staged draft release $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
-        echo "Build verified reproducible; provenance attested. Remaining manual steps (see BUILDING.md):" >> "$GITHUB_STEP_SUMMARY"
-        echo "1. Download the jar/SBOM assets and GPG-sign each locally with your ASF key." >> "$GITHUB_STEP_SUMMARY"
-        echo "2. \`gh release upload $RELEASE_TAG *.asc\`" >> "$GITHUB_STEP_SUMMARY"
-        echo "3. Start the dev@ vote, referencing this draft and its provenance attestation." >> "$GITHUB_STEP_SUMMARY"
-        echo "4. On a passing vote: \`gh release edit $RELEASE_TAG --draft=false\`." >> "$GITHUB_STEP_SUMMARY"
+        export GNUPGHOME="$(mktemp -d)"
+        trap 'rm -rf "$GNUPGHOME"' EXIT
+        printf '%s' "$ATR_SIGNING_KEY" | gpg --batch --import
+        local_user_args=()
+        [[ -n "$ATR_SIGNING_KEY_ID" ]] && local_user_args=(--local-user "$ATR_SIGNING_KEY_ID")
+        for f in "target/cloudstore-${RELEASE_VERSION}.jar" \
+                 "target/cloudstore-${RELEASE_VERSION}-src.tar.gz" \
+                 "target/cloudstore-${RELEASE_VERSION}-cyclonedx.json" \
+                 "target/cloudstore-${RELEASE_VERSION}-cyclonedx.xml"; do
+          gpg --batch --yes --pinentry-mode loopback "${local_user_args[@]}" --detach-sign "$f"
+        done
+
+    - name: Register an ephemeral SSH key with ATR (GitHub OIDC Trusted Publishing)
+      id: atr-ssh
+      run: |
+        key_dir="$(mktemp -d)"
+        echo "key_dir=$key_dir" >> "$GITHUB_OUTPUT"
+        ssh-keygen -q -t ed25519 -N '' -f "$key_dir/atr_key" -C "cloudstore-release-${RELEASE_VERSION}"
+
+        oidc_token="$(curl -sf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://${ATR_HOST}/" | jq -r '.value')"
+        if [[ -z "$oidc_token" || "$oidc_token" == "null" ]]; then
+          echo "::error::failed to obtain a GitHub OIDC token"
+          exit 1
+        fi
+
+        ssh_pub="$(cat "$key_dir/atr_key.pub")"
+        body="$(jq -n --arg publisher github --arg jwt "$oidc_token" --arg ssh_key "$ssh_pub" \
+          '{publisher: $publisher, jwt: $jwt, ssh_key: $ssh_key}')"
+
+        response="$(curl -sf -X POST "https://${ATR_HOST}/api/publisher/ssh/register" \
+          -H 'Content-Type: application/json' -d "$body")"
+        echo "ATR registered key: $(jq -c '{project, fingerprint, expires}' <<<"$response")"
+
+    - name: Upload the release candidate to ATR over rsync
+      run: |
+        key_dir="${{ steps.atr-ssh.outputs.key_dir }}"
+        chmod 600 "$key_dir/atr_key"
+        known_hosts_args=(-o StrictHostKeyChecking=accept-new)
+        if [[ -n "$ATR_SSH_KNOWN_HOSTS" ]]; then
+          known_hosts_file="$key_dir/known_hosts"
+          printf '%s\n' "$ATR_SSH_KNOWN_HOSTS" > "$known_hosts_file"
+          known_hosts_args=(-o StrictHostKeyChecking=yes -o UserKnownHostsFile="$known_hosts_file")
+        else
+          echo "::warning::vars.ATR_SSH_KNOWN_HOSTS is not set -- trusting ATR's host key on first connection"
+        fi
+        rsync -av -e "ssh -i $key_dir/atr_key -p 2222 ${known_hosts_args[*]}" \
+          "target/cloudstore-${RELEASE_VERSION}.jar" \
+          "target/cloudstore-${RELEASE_VERSION}.jar.asc" \
+          "target/cloudstore-${RELEASE_VERSION}.jar.sha256" \
+          "target/cloudstore-${RELEASE_VERSION}-src.tar.gz" \
+          "target/cloudstore-${RELEASE_VERSION}-src.tar.gz.asc" \
+          "target/cloudstore-${RELEASE_VERSION}-src.tar.gz.sha256" \
+          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.json" \
+          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.json.asc" \
+          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.json.sha256" \
+          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.xml" \
+          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.xml.asc" \
+          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.xml.sha256" \
+          "github@${ATR_HOST}:/${ATR_PROJECT_KEY}/${RELEASE_VERSION}/"
+        rm -rf "$key_dir"
+
+        {
+          echo "### Composed release candidate on ATR"
+          echo "Build verified reproducible; artifacts signed and uploaded to ATR"
+          echo "(project \`$ATR_PROJECT_KEY\`, version \`$RELEASE_VERSION\`)."
+          echo "Remaining manual steps, in ATR:"
+          echo "1. Review the candidate and its checks on the ATR project page."
+          echo "2. Start the PMC vote from ATR; it links voters to the candidate there."
+          echo "3. On a passing vote, finish the release from ATR to publish it."
+        } >> "$GITHUB_STEP_SUMMARY"

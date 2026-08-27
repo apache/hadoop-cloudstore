@@ -85,6 +85,7 @@
     <junit.version>4.13.2</junit.version>
 
     <!-- Add maven build version dependencies here, in order, prefixed with maven -->
+    <maven-assembly-plugin.version>3.8.0</maven-assembly-plugin.version>
     <maven-buildnumber-plugin.version>3.3.0</maven-buildnumber-plugin.version>
     <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
     <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
@@ -306,6 +307,31 @@
       </properties>
       <build>
         <plugins>
+          <!-- Every ASF release needs at least one source artifact; this is
+               cloudstore's. Packages the whole source tree per
+               dev-support/assembly/source-release.xml, honoring
+               project.build.outputTimestamp the same way maven-jar-plugin
+               does, so it stays reproducible alongside the jar and SBOMs. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <version>${maven-assembly-plugin.version}</version>
+            <executions>
+              <execution>
+                <id>source-release</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>single</goal>
+                </goals>
+                <configuration>
+                  <descriptors>
+                    <descriptor>${project.basedir}/dev-support/assembly/source-release.xml</descriptor>
+                  </descriptors>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+
           <!-- Emit a CycloneDX SBOM alongside the release jar.
                compile scope only: provided/test deps (Hadoop, AWS SDK,
                GCS, junit, hdfs) are intentionally excluded because they
@@ -364,6 +390,7 @@
                       <directory>${project.build.directory}</directory>
                       <includes>
                         <include>${project.artifactId}-${project.version}.jar</include>
+                        <include>${project.artifactId}-${project.version}-src.tar.gz</include>
                         <include>${project.artifactId}-${project.version}-cyclonedx.json</include>
                         <include>${project.artifactId}-${project.version}-cyclonedx.xml</include>
                       </includes>
