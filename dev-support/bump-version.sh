@@ -26,6 +26,11 @@
 # match ${cloudstore.docs.version}, which the verify gate
 # (dev-support/check-doc-versions.sh) enforces.
 #
+# Also on a release bump, sets <project.build.outputTimestamp> to HEAD's
+# commit time (Reproducible Builds -- see pom.xml). Deriving it from git
+# rather than wall-clock time means anyone who checks out the same commit
+# lands on the same value without being told what it is.
+#
 # Usage:   dev-support/bump-version.sh <new-version>
 # Example: dev-support/bump-version.sh 1.4-SNAPSHOT
 # Example: dev-support/bump-version.sh 1.4
@@ -81,6 +86,13 @@ if [[ "$NEW" != *-SNAPSHOT ]] \
   sed -i.bak -E "s|^(set -gx ver )[0-9]+\.[0-9]+|\1${NEW}|" BUILDING.md
   rm -f BUILDING.md.bak
   echo "  rewrote BUILDING.md (set -gx ver ${NEW})"
+fi
+
+if [[ "$NEW" != *-SNAPSHOT ]]; then
+  COMMIT_TS="$(TZ=UTC0 git log -1 --date=format-local:'%Y-%m-%dT%H:%M:%SZ' --format=%cd HEAD)"
+  mvn -q versions:set-property -Dproperty=project.build.outputTimestamp \
+      -DnewValue="$COMMIT_TS" -DgenerateBackupPoms=false
+  echo "  set project.build.outputTimestamp = ${COMMIT_TS} (HEAD commit time)"
 fi
 
 echo "done. Review with: git diff"

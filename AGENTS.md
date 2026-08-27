@@ -1,21 +1,4 @@
-<!---
-  Licensed to the Apache Software Foundation (ASF) under one
-  or more contributor license agreements.  See the NOTICE file
-  distributed with this work for additional information
-  regarding copyright ownership.  The ASF licenses this file
-  to you under the Apache License, Version 2.0 (the
-  "License"); you may not use this file except in compliance
-  with the License.  You may obtain a copy of the License at
-
-   http://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License. See accompanying LICENSE file.
--->
-
+<!-- SPDX-License-Identifier: Apache-2.0 -->
 
 This file governs AI-assisted work on the Apache Hadoop Cloudstore codebase.
 
@@ -41,13 +24,13 @@ Hadoop, AWS SDK v2, and the GCS connector are all `provided` scope — the JAR i
 
 See [BUILDING.md](./BUILDING.md).
 
-Bytecode is pinned to Java 8 (compiler plugin + enforcer rule `[1.8,)`). The build itself runs fine on JDK 11+, and **needs** JDK 11+ if you invoke `spotless:apply` (palantir-java-format requires it).
+Bytecode is pinned to Java 8 (compiler plugin + enforcer rule `[1.8,)`). The build itself runs on JDK 17
 
 ```bash
 mvn clean install                          # compile + unit tests + jar (default: hadoop.version=3.4.0)
 mvn clean verify                           # adds: ITest*, apache-rat:check, spotless:check
 mvn install -Pnext                         # next hadoop release
-mvn install -Dtrunk                        # trunk p;roifle
+mvn install -Dtrunk                        # trunk
 mvn install -P snapshots-and-staging       # adds ASF staging/snapshot repos
 
 mvn spotless:apply                         # auto-format Java to palantir-java-format

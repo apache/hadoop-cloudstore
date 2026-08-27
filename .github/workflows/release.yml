@@ -1,0 +1,165 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Automates the mechanical half of cutting a cloudstore release: build,
+# prove the build is reproducible, attest its provenance, and stage the
+# result as a draft GitHub Release. It does NOT sign or publish anything.
+#
+# Reproducibility is enforced, not assumed: the release profile is run
+# twice from a clean checkout and the resulting jar + SBOMs must be
+# byte-identical, or the job fails. That's what backs the claim that a
+# third party rebuilding the same commit with the same JDK gets the same
+# binary -- see pom.xml's project.build.outputTimestamp for the mechanism.
+#
+# Third-party actions are SHA-pinned per SECURITY.md. When bumping, update
+# both the SHA and the trailing tag comment in lockstep.
+
+name: Release build
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version to build, e.g. 1.7. Must match <version> in pom.xml at the chosen ref.'
+        required: true
+        type: string
+      ref:
+        description: 'Git ref to build (branch, tag, or SHA). Defaults to the ref this workflow is run from.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  # One in-flight build per version -- queue rather than race concurrent
+  # dispatches for the same release onto the same draft/tag.
+  group: ${{ github.workflow }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build, verify reproducibility, attest, stage
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write       # create/update the draft release
+      attestations: write   # actions/attest-build-provenance
+      id-token: write       # OIDC token for keyless (Sigstore) attestation
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_TAG: v${{ inputs.version }}
+    steps:
+    - name: Validate version input
+      run: |
+        if [[ ! "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::version must be X.Y (got '$RELEASE_VERSION')"
+          exit 1
+        fi
+
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        ref: ${{ inputs.ref }}
+        persist-credentials: false
+
+    - name: Set up JDK
+      uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+      with:
+        # The exact JDK a third party should use to reproduce this build
+        # bytecode-for-bytecode; see BUILDING.md "Reproducing a release".
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Confirm pom version matches the requested release version
+      run: |
+        actual="$(mvn -q -Dexec.executable=echo -Dexec.args='${project.version}' --non-recursive exec:exec)"
+        if [[ "$actual" != "$RELEASE_VERSION" ]]; then
+          echo "::error::pom.xml version is '$actual', requested release is '$RELEASE_VERSION' -- wrong ref?"
+          exit 1
+        fi
+
+    - name: Build (release profile) -- attempt 1
+      run: mvn -B -Prelease clean verify -DskipTests
+
+    - name: Stash attempt 1 artifacts
+      run: |
+        mkdir -p /tmp/build1
+        cp "target/cloudstore-${RELEASE_VERSION}.jar" \
+           "target/cloudstore-${RELEASE_VERSION}-cyclonedx.json" \
+           "target/cloudstore-${RELEASE_VERSION}-cyclonedx.xml" \
+           /tmp/build1/
+
+    - name: Build (release profile) -- attempt 2, independent rebuild
+      run: mvn -B -Prelease clean package -DskipTests
+
+    - name: Verify reproducibility (attempt 1 == attempt 2)
+      run: |
+        status=0
+        for f in "cloudstore-${RELEASE_VERSION}.jar" \
+                 "cloudstore-${RELEASE_VERSION}-cyclonedx.json" \
+                 "cloudstore-${RELEASE_VERSION}-cyclonedx.xml"; do
+          if cmp -s "/tmp/build1/$f" "target/$f"; then
+            echo "reproducible: $f"
+          else
+            echo "::error::$f differs between two consecutive builds of the same commit -- build is not reproducible"
+            shasum -a 256 "/tmp/build1/$f" "target/$f"
+            status=1
+          fi
+        done
+        exit $status
+
+    - name: Restore attempt 1 artifacts (the ones actually released)
+      run: cp /tmp/build1/* target/
+
+    - name: Attest build provenance
+      uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+      with:
+        subject-path: |
+          target/cloudstore-${{ inputs.version }}.jar
+          target/cloudstore-${{ inputs.version }}-cyclonedx.json
+          target/cloudstore-${{ inputs.version }}-cyclonedx.xml
+
+    - name: Stage draft GitHub Release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        assets=(
+          "target/cloudstore-${RELEASE_VERSION}.jar"
+          "target/cloudstore-${RELEASE_VERSION}.jar.sha256"
+          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.json"
+          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.json.sha256"
+          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.xml"
+          "target/cloudstore-${RELEASE_VERSION}-cyclonedx.xml.sha256"
+          "LICENSE-binary"
+          "NOTICE-binary"
+        )
+        if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          echo "release $RELEASE_TAG already exists -- uploading (replacing same-named assets)"
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+        else
+          gh release create "$RELEASE_TAG" \
+            --target "$(git rev-parse HEAD)" \
+            --title "cloudstore $RELEASE_VERSION" \
+            --draft \
+            --generate-notes \
+            "${assets[@]}"
+        fi
+        echo "### Staged draft release $RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
+        echo "Build verified reproducible; provenance attested. Remaining manual steps (see BUILDING.md):" >> "$GITHUB_STEP_SUMMARY"
+        echo "1. Download the jar/SBOM assets and GPG-sign each locally with your ASF key." >> "$GITHUB_STEP_SUMMARY"
+        echo "2. \`gh release upload $RELEASE_TAG *.asc\`" >> "$GITHUB_STEP_SUMMARY"
+        echo "3. Start the dev@ vote, referencing this draft and its provenance attestation." >> "$GITHUB_STEP_SUMMARY"
+        echo "4. On a passing vote: \`gh release edit $RELEASE_TAG --draft=false\`." >> "$GITHUB_STEP_SUMMARY"

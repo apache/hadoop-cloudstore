@@ -24,10 +24,10 @@ cli commands*
 
 ## Compiling
 
-With maven
+Builds with Apache Maven
 
 To build a production release
-1. Compile on a JDK17 JVM; the output is still generated for java 8 JVMs.
+1. Compile on a JDK17 JVM; the output is still generated for Java 8 JVMs.
 2. Compile against a shipping hadoop version (see the profiles).
 
 
@@ -46,7 +46,7 @@ opt in via profile + credentials in `src/test/resources/auth-keys.xml`:
 
 There are unit tests for store operations against the local fs and a mini hdfs cluster.
 
-There are Integration Tests which run with the `mvn verify` command, currently against S3 stores only.
+There are integration tests which run with the `mvn verify` command, currently against S3 stores only.
 The tests are minimal, any basic S3 implementation will suffice.
 
 To bind to a store, follow the [testing s3a](https://hadoop.apache.org/docs/stable/hadoop-aws/tools/hadoop-aws/testing.html#File_auth-keys.xml) docs.
@@ -113,22 +113,27 @@ dev-support/bump-version.sh 1.5-SNAPSHOT
 
 ## Releasing
 
-To publish the release use the github command line through the `fish` shell, with a final
-git UI interaction.
+Cutting a release is two phases: an **automated** build+stage phase that runs
+in CI, and a **manual** sign/vote/publish phase performed by the release
+manager (RM). No private key lives in CI — GPG signing with the RM's
+personal ASF key remains a human step, as ASF release policy requires.
+What CI automates is everything before that: building, proving the build is
+reproducible, attesting its provenance, and staging the result as a draft
+GitHub Release.
 
 Release builds activate the `release` profile, which:
 
-a. enforces a clean git tree via `buildnumber-maven-plugin`;
-b. emits a CycloneDX SBOM next to the jar:
+1. Enforces a clean git tree via `buildnumber-maven-plugin`;
+2. Emits a CycloneDX SBOM next to the jar:
     - `target/cloudstore-<version>-cyclonedx.json`
     - `target/cloudstore-<version>-cyclonedx.xml`
-c. emits a SHA-256 digest next to the jar and each SBOM file:
+3. Emits a SHA-256 digest next to the jar and each SBOM file:
     - `target/cloudstore-<version>.jar.sha256`
     - `target/cloudstore-<version>-cyclonedx.json.sha256`
     - `target/cloudstore-<version>-cyclonedx.xml.sha256`
 
-The SBOM is compile-scope only — `provided` deps (Hadoop, AWS SDK v2, GCS
-connector) are not in it because they are not shipped in the jar.
+The SBOM is compile-scope only — `provided` dependencies are not in it because they are not shipped
+in the jar.
 
 The `.sha256` files are produced by `checksum-maven-plugin` in the `verify`
 phase. They give downloaders a quick integrity check (`shasum -c
@@ -149,38 +154,82 @@ The build will fail if there are uncommitted changes.
 [INFO] Total time:  4.344 s
 [INFO] Finished at: 2026-06-26T17:23:21+01:00
 [INFO] ------------------------------------------------------------------------
-[ERROR] Failed to execute goal org.codehaus.mojo:buildnumber-maven-plugin:3.3.0:create (default) on project cloudstore: Cannot create the build number because you have local modifications : 
+[ERROR] Failed to execute goal org.codehaus.mojo:buildnumber-maven-plugin:3.3.0:create (default) on project cloudstore:
+        Cannot create the build number because you have local modifications : 
 ```
 
-### Release Commands (for fish)
+### Phase 1: automated build + staging (CI)
+
+After `dev-support/bump-version.sh <version>` and
+`dev-support/update-site-docs.sh <version>` have been run and committed
+(see the worked example above), dispatch `.github/workflows/release.yml`:
+
 ```bash
-set -gx ver 1.6                           # last released version; moved only on a release bump by dev-support/bump-version.sh
-
-# now the release build
-mvn clean install -Prelease,sign -DskipTests
-set -gx now (date '+%Y-%m-%d-%H.%M'); echo [$now]
-git commit -S --allow-empty -m "release $now"; git push
-# Guard: every artifact path below interpolates $ver. An unset/empty $ver
-# expands to target/cloudstore-.* (no match), so gh silently uploads only the
-# literal LICENSE-binary/NOTICE-binary. Fail loudly before that happens.
-test -n "$ver"; or begin; echo "ERROR: \$ver is unset/empty -- run: set -gx ver <version>"; exit 1; end
-gh release create tag-release-$now -t release-$now --generate-notes -d \
-    target/cloudstore-$ver.jar \
-    target/cloudstore-$ver.jar.asc \
-    target/cloudstore-$ver.jar.sha256 \
-    target/cloudstore-$ver-cyclonedx.json \
-    target/cloudstore-$ver-cyclonedx.json.asc \
-    target/cloudstore-$ver-cyclonedx.json.sha256 \
-    target/cloudstore-$ver-cyclonedx.xml \
-    target/cloudstore-$ver-cyclonedx.xml.asc \
-    target/cloudstore-$ver-cyclonedx.xml.sha256 \
-    LICENSE-binary \
-    NOTICE-binary
-echo "go to the web ui to review and finalize the release"
+set -gx ver 1.6                           # version being cut
+gh workflow run release.yml -f version=$ver
+gh run watch (gh run list --workflow=release.yml -L1 --json databaseId -q '.[0].databaseId')
 ```
 
-* If a new release is made the same day, remember to create a new tag.
-* If you have an env var pointing to the cloudstore JAR, update it!
+The workflow, from a clean checkout of the ref you dispatched from:
+
+1. builds with the `release` profile *twice*, independently, and fails the
+   job unless the jar and both SBOMs are byte-identical between the two
+   builds — this is what backs "anyone else building this gets the same
+   binary", rather than just asserting it;
+2. attests build provenance for the jar and SBOMs via
+   `actions/attest-build-provenance` (keyless, Sigstore/OIDC-backed — no
+   secret key stored in CI);
+3. stages everything as a **draft** GitHub Release tagged `v<version>`
+   (superseding the old `tag-release-<timestamp>` scheme — one tag per
+   release version now, since multiple runs for the same version just
+   update the same draft).
+
+The job summary lists the Phase 2 steps below as a checklist.
+
+### Phase 2: manual sign, vote, publish (RM)
+
+```bash
+test -n "$ver"; or begin; echo "ERROR: \$ver is unset/empty -- run: set -gx ver <version>"; exit 1; end
+
+# Rebuild locally and sign -- reproducibility means this jar is byte-identical
+# to the one CI already staged, so signing it is equivalent to signing CI's.
+mvn clean install -Prelease,sign -DskipTests
+
+# Independent confirmation before trusting it: compare against the draft's
+# published digest.
+gh release download v$ver -D /tmp/release-$ver --pattern '*.sha256'
+[ "$(shasum -a 256 target/cloudstore-$ver.jar | awk '{print $1}')" = \
+  "$(cat /tmp/release-$ver/cloudstore-$ver.jar.sha256)" ] && echo "reproducible: matches CI's build"
+
+# Upload just the signatures -- the jar/SBOMs/checksums are already staged.
+gh release upload v$ver \
+    target/cloudstore-$ver.jar.asc \
+    target/cloudstore-$ver-cyclonedx.json.asc \
+    target/cloudstore-$ver-cyclonedx.xml.asc
+
+echo "go to the web ui to review, start the dev@ vote referencing the draft"
+echo "and its provenance attestation (gh attestation verify), and on a"
+echo "passing vote: gh release edit v$ver --draft=false"
+```
+
+### Reproducing a release yourself
+
+Anyone — CI, the RM, or a third party — gets the same binary from the same
+commit, provided they use the same JDK (Temurin 17, matching
+`release.yml`'s `Set up JDK` step; bytecode target is 1.8 either way):
+
+```bash
+git checkout v$ver
+mvn -Prelease clean package -DskipTests
+[ "$(shasum -a 256 target/cloudstore-$ver.jar | awk '{print $1}')" = \
+  "$(curl -sL https://github.com/apache/hadoop-cloudstore/releases/download/v$ver/cloudstore-$ver.jar.sha256)" ] \
+  && echo "reproducible"
+```
+
+This works because `project.build.outputTimestamp` in `pom.xml` pins the
+jar's internal timestamps to a fixed point (HEAD's commit time at release-cut,
+set by `dev-support/bump-version.sh`) instead of "whenever the build ran" —
+see the [Maven reproducible builds guide](https://maven.apache.org/guides/mini/guide-reproducible-builds.html).
 
 ## Signing release artifacts
 
@@ -222,21 +271,9 @@ compare directly:
 gpg --verify cloudstore-$ver.jar.asc cloudstore-$ver.jar
 ```
 
-The `gh release create` command above attaches the jar, the SBOM
-(JSON + XML), each of their `.asc` signatures, and each of their
-`.sha256` digests in one shot. For an already-published release,
-append the missing files with `gh release upload`:
-
-```bash
-test -n "$ver"; or begin; echo "ERROR: \$ver is unset/empty -- run: set -gx ver <version>"; exit 1; end
-gh release upload tag-release-$now \
-    target/cloudstore-$ver.jar.asc \
-    target/cloudstore-$ver.jar.sha256 \
-    target/cloudstore-$ver-cyclonedx.json.asc \
-    target/cloudstore-$ver-cyclonedx.json.sha256 \
-    target/cloudstore-$ver-cyclonedx.xml.asc \
-    target/cloudstore-$ver-cyclonedx.xml.sha256
-```
+Phase 1 above already stages the jar, SBOMs, and `.sha256` digests on the
+draft release; Phase 2's `gh release upload v$ver *.asc` is what attaches
+the signatures produced here.
 
 ## How to bypass buildnumber checks
 

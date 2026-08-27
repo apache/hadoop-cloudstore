@@ -38,6 +38,15 @@
   </scm>
 
   <properties>
+
+    <!-- Reproducible Builds: a fixed point in time used by maven-jar-plugin
+         (and other plexus-archiver-backed plugins) to normalize entry
+         timestamps, so two builds of the same commit produce a
+         byte-identical jar regardless of when/where they run. Kept in sync
+         with HEAD's commit time by dev-support/bump-version.sh on every
+         release bump; do not hand-edit outside that script. -->
+    <project.build.outputTimestamp>2026-08-27T15:23:49Z</project.build.outputTimestamp>
+
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <file.encoding>UTF-8</file.encoding>
     <javac.version>1.8</javac.version>
