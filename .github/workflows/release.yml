@@ -78,6 +78,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
+      # contents: read must be repeated here or checkout loses read access.
+      contents: read
       attestations: write   # actions/attest-build-provenance (independent of ATR)
       id-token: write       # OIDC token for GitHub->ATR Trusted Publishing and for attest-build-provenance
     env:
@@ -190,11 +192,12 @@ jobs:
         done
 
     - name: Upload the release candidate to ATR
-      uses: apache/tooling-actions/upload-to-atr@5bd24e53798bc79aa7bb69f62154a6b1e18ffd6e
+      uses: apache/tooling-actions/upload-to-atr@fa721a0b176d713807b574da721b96545b587eea
       with:
         project: ${{ vars.ATR_PROJECT_KEY }}
         version: ${{ inputs.version }}
         src: dist
+        atr-host: releases.apache.org
 
     - name: Job summary
       run: |
