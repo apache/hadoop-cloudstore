@@ -307,31 +307,6 @@
       </properties>
       <build>
         <plugins>
-          <!-- Every ASF release needs at least one source artifact; this is
-               cloudstore's. Packages the whole source tree per
-               dev-support/assembly/source-release.xml, honoring
-               project.build.outputTimestamp the same way maven-jar-plugin
-               does, so it stays reproducible alongside the jar and SBOMs. -->
-          <plugin>
-            <groupId>org.apache.maven.plugins</groupId>
-            <artifactId>maven-assembly-plugin</artifactId>
-            <version>${maven-assembly-plugin.version}</version>
-            <executions>
-              <execution>
-                <id>source-release</id>
-                <phase>package</phase>
-                <goals>
-                  <goal>single</goal>
-                </goals>
-                <configuration>
-                  <descriptors>
-                    <descriptor>${project.basedir}/dev-support/assembly/source-release.xml</descriptor>
-                  </descriptors>
-                </configuration>
-              </execution>
-            </executions>
-          </plugin>
-
           <!-- Emit a CycloneDX SBOM alongside the release jar.
                compile scope only: provided/test deps (Hadoop, AWS SDK,
                GCS, junit, hdfs) are intentionally excluded because they
@@ -363,13 +338,8 @@
             </executions>
           </plugin>
 
-          <!-- Emit SHA-256 checksums alongside the release jar and SBOM.
-               Downloaders verify integrity with `shasum -c <file>.sha256`
-               before trusting the artifact; the gpg signature on the
-               original file remains the authenticity primitive.
-               Runs in the `verify` phase, after the cyclonedx-maven-plugin
-               has produced the SBOM files in `package`, so all three
-               inputs exist on disk. -->
+          <!-- Emit SHA-256 checksums alongside the release jar, SBOM, and
+               (with -Passembly also active) the source tarball. -->
           <plugin>
             <groupId>net.nicoulaj.maven.plugins</groupId>
             <artifactId>checksum-maven-plugin</artifactId>
@@ -398,6 +368,46 @@
                   </fileSets>
                   <csvSummary>false</csvSummary>
                   <xmlSummary>false</xmlSummary>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!-- Local/fork path for the release's mandatory source artifact.
+         Activate alongside release: `mvn -Prelease,assembly clean verify`.
+         Packages the working directory via maven-assembly-plugin per
+         dev-support/assembly/source-release.xml (filesystem excludes,
+         not `git ls-files`, so it works from a shallow clone, a fork, or
+         a directory that isn't a git checkout at all), honoring
+         project.build.outputTimestamp the same way maven-jar-plugin does,
+         so it stays reproducible alongside the jar and SBOMs.
+         Deliberately its own profile, not folded into `release`: CI's ATR
+         upload path builds this same artifact with `git archive` instead
+         (more deterministic w.r.t. source integrity; see BUILDING.md), so
+         `release.yml` runs `-Prelease` without `-Passembly` and there is
+         nothing here for it to build, let alone overwrite. -->
+    <profile>
+      <id>assembly</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <version>${maven-assembly-plugin.version}</version>
+            <executions>
+              <execution>
+                <id>source-release</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>single</goal>
+                </goals>
+                <configuration>
+                  <descriptors>
+                    <descriptor>${project.basedir}/dev-support/assembly/source-release.xml</descriptor>
+                  </descriptors>
                 </configuration>
               </execution>
             </executions>

@@ -17,9 +17,10 @@
 -->
 
 <!--
-  Packages the whole source tree as the release's mandatory source
-  artifact, stripping out local build artifacts and possible cloud credentials
-  in auth-keys.xml
+  Local/fork path for the release's mandatory source artifact: packages the
+  working directory via Maven, filesystem excludes rather than
+  `git ls-files`, so it works from a shallow clone, a fork, or a directory
+  that isn't a git checkout at all.
 -->
 <assembly xmlns="http://maven.apache.org/ASSEMBLY/2.2.0"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -39,15 +40,14 @@
         <exclude>**/target/**</exclude>
         <exclude>.git/**</exclude>
         <exclude>.idea/**</exclude>
+        <!-- Local AI-assistant tooling state; untracked, not part of the
+             project's source (see AGENTS.MD / CLAUDE.md for the tracked
+             instructions files, which are not excluded here). -->
         <exclude>.claude/**</exclude>
         <exclude>**/*.iml</exclude>
         <exclude>**/.DS_Store</exclude>
         <exclude>pom.xml.versionsBackup</exclude>
-        <!-- CRITICAL: this must be excluded if anyone ever cuts a release from a local machine. -->
         <exclude>src/test/resources/auth-keys.xml</exclude>
-        <!-- Binary-release-only notices; not applicable to a source tree. -->
-        <exclude>LICENSE-binary</exclude>
-        <exclude>NOTICE-binary</exclude>
       </excludes>
     </fileSet>
   </fileSets>
