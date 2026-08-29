@@ -60,7 +60,7 @@ notifications:
   issues:       common-issues@hadoop.apache.org
   pullrequests: common-issues@hadoop.apache.org
   jira_options: comment link label
-
+t
 github:
   description: "Apache Hadoop Cloudstore Tool"
   homepage: https://hadoop.apache.org/
