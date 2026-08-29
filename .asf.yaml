@@ -17,6 +17,50 @@
 # The format of this file is documented at
 # https://github.com/apache/infrastructure-asfyaml/blob/main/README.md
 
+
+project:
+  metadata:
+    key: hadoop-cloudstore
+    committee: hadoop
+    name: Apache Hadoop Cloudstore Tool
+    description: Cloudstore is a JAR file containing diagnostics entry points for use with the hadoop CLI, intended to help debug connectivity, authentication and performance issues with cloud storage.
+    short_description: Cloudstore provides hadoop cloud storage diagnostics and other utility commands.
+    #homepage: https://tooling.apache.org/trusted-releases.html
+    #lifecycle_page: https://tooling.apache.org/trusted-releases.html
+    #download_page: https://github.com/apache/tooling-trusted-releases
+    bug_database: https://issues.apache.org/jira/browse/
+    mailing_lists: https://hadoop.apache.org/mailing_lists.html
+    security_contact: security@hadoop.apache.org
+    threat_model_link: https://github.com/apache/hadoop-cloudstore/security/policy
+    threat_model_src_link: https://github.com/apache/hadoop-cloudstore/blob/main/SECURITY.md
+    repositories:
+      - git@github.com:apache/hadoop-cloudstore.git
+    categories:
+      - hadoop
+      - cloud-storage
+      - diagnostics
+    programming_languages:
+      - java
+    version_method: simple
+    version_pattern: '^\d+\.\d+$'
+    cycle_match: '^(\d+)\.\d+$'
+  policy:
+    vote_mode: email
+    min_hours: 72
+    license_check_mode: RAT
+    vote_recipients:
+      to: common-dev@hadoop.apache.org
+    announce_recipients:
+      to: general@hadoop.apache.org
+  features:
+    atr_sync: true
+
+notifications:
+  commits:      common-commits@hadoop.apache.org
+  issues:       common-issues@hadoop.apache.org
+  pullrequests: common-issues@hadoop.apache.org
+  jira_options: comment link label
+
 github:
   description: "Apache Hadoop Cloudstore Tool"
   homepage: https://hadoop.apache.org/
@@ -65,16 +109,9 @@ github:
       # requires all conversations to be resolved before merging is possible
       required_conversation_resolution: false
 
-notifications:
-  commits:      common-commits@hadoop.apache.org
-  issues:       common-issues@hadoop.apache.org
-  pullrequests: common-issues@hadoop.apache.org
-  jira_options: comment link label
 
 features:
   wiki: false
   issues: true
   projects: false
-
-
 
