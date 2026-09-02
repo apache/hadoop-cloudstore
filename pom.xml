@@ -39,14 +39,6 @@
 
   <properties>
 
-    <!-- Reproducible Builds: a fixed point in time used by maven-jar-plugin
-         (and other plexus-archiver-backed plugins) to normalize entry
-         timestamps, so two builds of the same commit produce a
-         byte-identical jar regardless of when/where they run. Kept in sync
-         with HEAD's commit time by dev-support/bump-version.sh on every
-         release bump; do not hand-edit outside that script. -->
-    <project.build.outputTimestamp>2026-08-27T15:23:49Z</project.build.outputTimestamp>
-
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <file.encoding>UTF-8</file.encoding>
     <javac.version>1.8</javac.version>
@@ -54,9 +46,6 @@
 
     <test.build.dir>${project.build.directory}/test-dir</test.build.dir>
     <test.build.data>${test.build.dir}</test.build.data>
-
-    <buildnumber.check>false</buildnumber.check>
-    <buildnumber.update>false</buildnumber.update>
 
     <!-- Most recently released cloudstore version: the version users
          download. Independent of ${project.version}, which moves through
@@ -79,6 +68,7 @@
     <!-- last version of checkstyle to run on Java 17-->
     <checkstyle.version>12.3.1</checkstyle.version>
     <checksum-maven-plugin.version>1.11</checksum-maven-plugin.version>
+    <cyclonedx.schema.version>1.6</cyclonedx.schema.version>
     <doxia-module-markdown.version>1.12.0</doxia-module-markdown.version>
     <gcs-connector.version>hadoop3-2.2.4</gcs-connector.version>
     <hadoop.version>3.4.2</hadoop.version>
@@ -86,7 +76,6 @@
 
     <!-- Add maven build version dependencies here, in order, prefixed with maven -->
     <maven-assembly-plugin.version>3.8.0</maven-assembly-plugin.version>
-    <maven-buildnumber-plugin.version>3.3.0</maven-buildnumber-plugin.version>
     <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
     <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
     <maven-cyclonedx-plugin.version>2.9.3</maven-cyclonedx-plugin.version>
@@ -295,15 +284,8 @@
     <profile>
       <id>release</id>
       <properties>
-        <buildnumber.check>true</buildnumber.check>
-        <!-- update=false: do NOT `git pull` during the release build. doUpdate
-             runs `git pull` to refresh the working copy, which fails on setups
-             where the local branch has no matching upstream ref
-             ("fatal: couldn't find remote ref HEAD") and aborts the whole
-             build. The release only needs the clean-tree check (doCheck) and
-             the local revision; pulling is the releaser's job, done
-             deliberately before the build. -->
-        <buildnumber.update>false</buildnumber.update>
+        <!-- Kept in sync with HEAD's commit time by dev-support/bump-version.sh -->
+        <project.build.outputTimestamp>2026-08-27T15:23:49Z</project.build.outputTimestamp>
       </properties>
       <build>
         <plugins>
@@ -311,7 +293,13 @@
                compile scope only: provided/test deps (Hadoop, AWS SDK,
                GCS, junit, hdfs) are intentionally excluded because they
                are not shipped inside the jar - they come from the host
-               Hadoop install or the test classpath. -->
+               Hadoop install or the test classpath.
+
+               see: https://github.com/CycloneDX/cyclonedx-maven-plugin
+
+
+               Note that warnings are printed about JSON validity; ignore these.
+               -->
           <plugin>
             <groupId>org.cyclonedx</groupId>
             <artifactId>cyclonedx-maven-plugin</artifactId>
@@ -324,15 +312,15 @@
                   <goal>makeBom</goal>
                 </goals>
                 <configuration>
-                  <includeCompileScope>true</includeCompileScope>
+                  <projectType>library</projectType>
+                  <schemaVersion>${cyclonedx.schema.version}</schemaVersion>
+                  <includeCompileScope>false</includeCompileScope>
                   <includeProvidedScope>false</includeProvidedScope>
                   <includeRuntimeScope>false</includeRuntimeScope>
                   <includeSystemScope>false</includeSystemScope>
                   <includeTestScope>false</includeTestScope>
                   <outputFormat>all</outputFormat>
                   <outputName>${project.artifactId}-${project.version}-cyclonedx</outputName>
-                  <schemaVersion>1.5</schemaVersion>
-                  <projectType>library</projectType>
                 </configuration>
               </execution>
             </executions>
@@ -449,6 +437,19 @@
       </build>
     </profile>
 
+    <!--
+     Reproducible Build profile
+     - No timestamps in build
+     - No SCM, local fs, local network state in build, including username.
+    -->
+    <profile>
+      <id>reproducible</id>
+      <properties>
+
+
+
+      </properties>
+    </profile>
     <!--
      This is a profile to enable the use of the ASF snapshot and staging repositories
      during a build. It is useful when testing against nightly or RC releases of dependencies.
@@ -593,11 +594,6 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-jar-plugin</artifactId>
           <version>${maven-jar-plugin.version}</version>
-          <configuration>
-            <!--            <archive>
-                          <manifestFile>src/main/resources/META-INF/MANIFEST.MF</manifestFile>
-                        </archive>-->
-          </configuration>
         </plugin>
 
         <!-- Surefire: capture every test's stdout/stderr into a per-test
@@ -629,12 +625,7 @@
               <configuration>
                 <forkCount>1</forkCount>
                 <reuseForks>false</reuseForks>
-                <!--                <argLine>${maven-surefire-plugin.argLine} -DminiClusterDedicatedDirs=true</argLine>-->
                 <forkedProcessTimeoutInSeconds>600</forkedProcessTimeoutInSeconds>
-                <!--
-                                <systemPropertyVariables>
-                                </systemPropertyVariables>
-                -->
                 <redirectTestOutputToFile>true</redirectTestOutputToFile>
                 <includes>
                   <include>**/ITest*.java</include>
@@ -828,27 +819,6 @@
           </execution>
         </executions>
       </plugin>
-      <!-- kept failing -->
-      <!--  Execution default of goal org.codehaus.mojo:buildnumber-maven-plugin:3.3.0:create failed: begin 4, end 0, length 0 -->
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>buildnumber-maven-plugin</artifactId>
-        <version>${maven-buildnumber-plugin.version}</version>
-        <configuration>
-          <shortRevisionLength>7</shortRevisionLength>
-          <doCheck>${buildnumber.check}</doCheck>
-          <doUpdate>${buildnumber.update}</doUpdate>
-          <revisionOnScmFailure>UNKNOWN</revisionOnScmFailure>
-        </configuration>
-        <executions>
-          <execution>
-            <phase>validate</phase>
-            <goals>
-              <goal>create</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-jar-plugin</artifactId>
@@ -856,10 +826,10 @@
           <archive>
             <manifest>
               <mainClass>org.apache.hadoop.fs.store.Cloudstore</mainClass>
-              <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+              <addDefaultImplementationEntries>false</addDefaultImplementationEntries>
+              <addBuildEnvironmentEntries>false</addBuildEnvironmentEntries>
             </manifest>
             <manifestEntries>
-              <git-SHA-1>${buildNumber}</git-SHA-1>
             </manifestEntries>
           </archive>
         </configuration>

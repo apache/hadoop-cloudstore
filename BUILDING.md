@@ -125,8 +125,7 @@ header comment), and voting/publishing happen as ASF release policy
 requires — a PMC vote is not something CI can substitute for.
 
 Release builds activate the `release` profile, which:
-
-1. Enforces a clean git tree via `buildnumber-maven-plugin`;
+1. Fixes the timestamp of the build to a value in the POM file, rather than set to the current clock.
 2. Emits a CycloneDX SBOM next to the jar:
     - `target/cloudstore-<version>-cyclonedx.json`
     - `target/cloudstore-<version>-cyclonedx.xml`
@@ -157,24 +156,9 @@ it. Cloudstore has two ways to build it's source file `cloudstore-<version>-src.
   a directory that isn't a git checkout at all. `mvn -Prelease clean
   verify` on its own does *not* build this artifact.
 
-It also generates a build version, with the buildnumber plugin.
-On release builds, this will fail the build if there are uncommitted changes.
 
-** You must commit all changes before starting a release build.**
+** You SHOULD commit all changes before starting a release build.**
 
-The build will fail if there are uncommitted changes.
-
-```
-[INFO] --- buildnumber:3.3.0:create (default) @ cloudstore ---
-[INFO] ------------------------------------------------------------------------
-[INFO] BUILD FAILURE
-[INFO] ------------------------------------------------------------------------
-[INFO] Total time:  4.344 s
-[INFO] Finished at: 2026-06-26T17:23:21+01:00
-[INFO] ------------------------------------------------------------------------
-[ERROR] Failed to execute goal org.codehaus.mojo:buildnumber-maven-plugin:3.3.0:create (default) on project cloudstore:
-        Cannot create the build number because you have local modifications : 
-```
 
 ### One-time setup
 
@@ -221,24 +205,25 @@ ATR then runs its own checks (signature, hash, archive structure, license,
 RAT, SBOM conformance) against the uploaded candidate automatically; the job
 summary points at where to review them.
 
-ATR tracks the candidate by project and
-version — but do tag the commit anyway so "Reproducing a release yourself"
+ATR tracks the candidate by project and version — but do tag the commit anyway so "Reproducing a release yourself"
 below stays meaningful: `git tag v$ver <ref>; git push origin v$ver`.
 
 ### Phase 2: vote and publish (PMC, in ATR)
 
 From here the process is entirely in ATR, not this repository:
 
-1. Review the candidate and its check results on the ATR project page.
-2. Start the vote from ATR — it emails dev@ with a link to the candidate on
+1. Release Manager: Review the candidate and its check results on the [ATR project page](https://releases.apache.org/#project-hadoop-cloudstore).
+2. Release Manager: check out the same source from SCM, perform a local build with the `-Prelease` flag *and verify the artifact checksums match*.
+3. Release Manager: Start the vote from ATR — it emails dev@ with a link to the candidate on
    ATR (link only that page; see
    [Staging and voting](https://github.com/apache/tooling-trusted-releases/blob/main/atr/docs/staging-and-voting.md#what-to-link-in-a-vote-announcement)
    for why).
-3. Developers (nonbinding) and PMC members vote (binding).
-4. On a passing vote, finish the release from ATR. From Beta, ATR publishes
+4. Developers (nonbinding) and PMC members vote (binding).
+5. Release Manager: On a passing vote, finish the release from ATR. From Beta, ATR publishes
    directly to `dist/release`; during Alpha it publishes to `dist/atr` and a
    committer must move the files, as described in
    [Promoting to release](https://github.com/apache/tooling-trusted-releases/blob/main/atr/docs/promoting-to-release.md).
+6. Announce the release on hadoop general mailing list.
 
 
 ## Building and signing release artifacts locally
@@ -287,12 +272,5 @@ gpg --verify cloudstore-$ver.jar.asc cloudstore-$ver.jar
 To upload artifacts signed this way to ATR by hand, see the "How files reach
 ATR" section of
 [Staging and voting](https://github.com/apache/tooling-trusted-releases/blob/main/atr/docs/staging-and-voting.md#how-files-reach-atr).
-
-
-## How to bypass buildnumber checks
-
-```bash
-mvn clean install -Prelease -DskipTests -Dbuildnumber.check=false -Dbuildnumber.update=false
-```
 
 

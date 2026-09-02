@@ -25,9 +25,9 @@ project:
     name: Apache Hadoop Cloudstore Tool
     description: Cloudstore is a JAR file containing diagnostics entry points for use with the hadoop CLI, intended to help debug connectivity, authentication and performance issues with cloud storage.
     short_description: Cloudstore provides hadoop cloud storage diagnostics and other utility commands.
-    #homepage: https://tooling.apache.org/trusted-releases.html
+    homepage: https://hadoop.apache.org/
     #lifecycle_page: https://tooling.apache.org/trusted-releases.html
-    #download_page: https://github.com/apache/tooling-trusted-releases
+    download_page: https://hadoop.apache.org/releases.html
     bug_database: https://issues.apache.org/jira/browse/
     mailing_lists: https://hadoop.apache.org/mailing_lists.html
     security_contact: security@hadoop.apache.org
