@@ -17,6 +17,13 @@
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
+  <parent>
+    <groupId>org.apache</groupId>
+    <artifactId>apache</artifactId>
+    <version>39</version>
+    <relativePath />
+  </parent>
+
   <groupId>org.apache.hadoop</groupId>
   <artifactId>cloudstore</artifactId>
   <version>1.6</version>
@@ -438,18 +445,22 @@
     </profile>
 
     <!--
-     Reproducible Build profile
-     - No timestamps in build
-     - No SCM, local fs, local network state in build, including username.
+     Repeatable Build profile.
+     Any options which should be set for repeatable builds.
+
     -->
     <profile>
-      <id>reproducible</id>
+      <id>repeatable</id>
       <properties>
-
-
-
+        <properties>
+          <!-- Kept in sync with HEAD's commit time by dev-support/bump-version.sh -->
+          <!-- the release profile *also* sets this; doing it here delivers the same outcome
+          on a non-release build. -->
+          <project.build.outputTimestamp>2026-08-27T15:23:49Z</project.build.outputTimestamp>
+        </properties>
       </properties>
     </profile>
+
     <!--
      This is a profile to enable the use of the ASF snapshot and staging repositories
      during a build. It is useful when testing against nightly or RC releases of dependencies.
