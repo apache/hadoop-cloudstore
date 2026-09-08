@@ -84,7 +84,7 @@
     <!-- Add maven build version dependencies here, in order, prefixed with maven -->
     <maven-assembly-plugin.version>3.8.0</maven-assembly-plugin.version>
     <maven-checkstyle-plugin.version>3.6.0</maven-checkstyle-plugin.version>
-    <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
+    <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
     <maven-cyclonedx-plugin.version>2.9.3</maven-cyclonedx-plugin.version>
     <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
     <maven-exec-plugin.version>3.6.3</maven-exec-plugin.version>
